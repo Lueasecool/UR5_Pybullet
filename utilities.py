@@ -24,14 +24,14 @@ class YCBModels(Models):
     def __init__(self, root, selected_names: tuple = ()):
         self.obj_files = glob.glob(root)
         self.selected_names = selected_names
-
+        print('selected names:',selected_names)
         self.visual_shapes = []
         self.collision_shapes = []
 
     def load_objects(self):
         shift = [0, 0, 0]
-        mesh_scale = [1, 1, 1]
-
+        mesh_scale = [0.5, 0.5, 0.5]
+        # mesh_scale = [1, 1, 1]
         for filename in self.obj_files:
             # Check selected_names
             if self.selected_names:
@@ -104,7 +104,7 @@ def setup_sisbot(p, robotID, gripper_type):
         else:
             raise NotImplementedError("controlGripper does not support \"{}\" control mode".format(controlMode))
         # check if there
-        if len(kwargs) is not 0:
+        if len(kwargs) != 0:
             raise KeyError("No keys {} in controlGripper".format(", ".join(kwargs.keys())))
 
     assert gripper_type in ['85', '140']
@@ -124,6 +124,7 @@ def setup_sisbot(p, robotID, gripper_type):
             "right_inner_finger_joint": 1}
     parent = joints[mimicParentName]
     children = AttrDict((j, joints[j]) for j in joints if j in mimicChildren.keys())
+    #引入偏函数partial以固定部分参数
     controlRobotiqC2 = functools.partial(controlGripper, robotID, parent, children, mimicChildren)
 
     return joints, controlRobotiqC2, controlJoints, mimicParentName
@@ -181,7 +182,7 @@ def setup_sisbot_force(p, robotID, gripper_type):
         else:
             raise NotImplementedError("controlGripper does not support \"{}\" control mode".format(controlMode))
         # check if there
-        if len(kwargs) is not 0:
+        if len(kwargs) != 0:
             raise KeyError("No keys {} in controlGripper".format(", ".join(kwargs.keys())))
 
     assert gripper_type in ['85', '140']
@@ -224,11 +225,14 @@ class Camera:
         self.view_matrix = p.computeViewMatrix([self.x, self.y, self.z],
                                                [self.x - 1e-5, self.y, 0],
                                                [-1, 0, 0])
+        #视图矩阵：计算世界坐标系中的物体在摄像机坐标系下的坐标
         self.projection_matrix = p.computeProjectionMatrixFOV(self.fov, aspect, self.near, self.far)
-
+        #投影矩阵：计算世界坐标系中的物体在相机二维平面上的坐标
         _view_matrix = np.array(self.view_matrix).reshape((4, 4), order='F')
         _projection_matrix = np.array(self.projection_matrix).reshape((4, 4), order='F')
         self.tran_pix_world = np.linalg.inv(_projection_matrix @ _view_matrix)
+        #@ ：相乘运算，inv：计算逆矩阵
+       
 
     def rgbd_2_world(self, w, h, d):
         x = (2 * w - self.width) / self.width
@@ -246,7 +250,9 @@ class Camera:
                                                    self.view_matrix, self.projection_matrix,
                                                    )
         return rgb, depth, seg
-
+    '''
+    批量处理深度图像数据，将多个像素的RGBD信息转换成世界坐标系下的三维位置信息
+    '''
     def rgbd_2_world_batch(self, depth):
         x = (2 * np.arange(0, self.width) - self.width) / self.width
         x = np.repeat(x[None, :], self.height, axis=0)

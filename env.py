@@ -46,8 +46,8 @@ class ClutteredPushGrasp:
         p.setGravity(0, 0, -10)
         self.planeID = p.loadURDF("plane.urdf")
         self.tablaID = p.loadURDF("./urdf/objects/table.urdf",
-                                  [0.0, -0.5, 0.8],
-                                  p.getQuaternionFromEuler([0, 0, 0]),
+                                  [0.0, -0.5, 0.8],#base position
+                                  p.getQuaternionFromEuler([0, 0, 0]),#base orientation
                                   useFixedBase=True)
         self.UR5StandID = p.loadURDF("./urdf/objects/ur5_stand.urdf",
                                      [-0.7, -0.36, 0.0],
@@ -107,7 +107,7 @@ class ClutteredPushGrasp:
         p.stepSimulation()
         if self.vis:
             time.sleep(self.SIMULATION_STEP_DELAY)
-
+    #加载物体模型
     def load_objects(self, num):
         for _ in range(num):
             vis_shape, col_shape = random.choice(self.models)
@@ -150,6 +150,7 @@ class ClutteredPushGrasp:
                 return
         print('Warning: Not still after MAX_WAIT_EPOCHS = %d.' % max_wait_epochs)
 
+    #存储已加载物体的物理属性
     def save_obj_state(self):
         if len(self.obj_state) > 0:
             assert self.num_objs == len(self.obj_state)
@@ -208,6 +209,7 @@ class ClutteredPushGrasp:
         # The return value of the step() method
         observation, reward, done, info = None, 0.0, False, dict()
         self.reset_robot()
+        #先移动到高点
         self.move_ee((x, y, self.GRIPPER_MOVING_HEIGHT, orn))  # Top-Down grasp / push
         grasp_success, push_success = False, False
         if action_type == 'grasp':
@@ -215,7 +217,7 @@ class ClutteredPushGrasp:
             self.move_ee((x, y, z + self.GRASP_POINT_OFFSET_Z, orn),
                          custom_velocity=0.05, max_step=1000)
             # item_in_gripper = self.close_gripper(check_contact=True)
-            item_in_gripper = self.close_gripper(check_contact=True)
+            item_in_gripper = self.close_gripper(check_contact=True)#闭合夹爪并检查是否接触到物体
             print('Item in Gripper!')
             # When lifting the object, constantly try to close the gripper, in case of dropping
             self.move_ee((x, y, z + self.GRASP_POINT_OFFSET_Z + 0.1, orn), try_close_gripper=False,
@@ -269,6 +271,7 @@ class ClutteredPushGrasp:
         return observation, reward, done, info
 
     def reset_robot(self):
+        #初始位置
         user_parameters = (-1.5690622952052096, -1.5446774605904932, 1.343946009733127, -1.3708613585093699,
                            -1.5707970583733368, 0.0009377758247187636, 0.085)
         for _ in range(100):
@@ -287,7 +290,7 @@ class ClutteredPushGrasp:
         self.reset_robot()
         self.reset_obj_state()
         self.move_away_arm()
-        rgb, depth, seg = self.camera.shot()
+        rgb, depth, seg = self.camera.shot()#获取初始位置相机的图像数据
         self.prev_observation = (rgb, depth, seg)
         self.reset_robot()
         self.successful_obj_ids = []
@@ -302,6 +305,7 @@ class ClutteredPushGrasp:
             self.step_simulation()
 
     def check_grasped_id(self):
+        #查询夹取物体的id
         left_index = self.joints['left_inner_finger_pad_joint'].id
         right_index = self.joints['right_inner_finger_pad_joint'].id
 
@@ -322,18 +326,18 @@ class ClutteredPushGrasp:
         contact_right = p.getContactPoints(bodyA=self.robotID, linkIndexA=right_index)
 
         if bool_operator == 'and' and not (contact_right and contact_left):
-            return False
+            return False#左右夹爪接触到物体返回false
 
         # Check the force
         left_force = p.getJointState(self.robotID, left_index)[2][:3]  # 6DOF, Torque is ignored
         right_force = p.getJointState(self.robotID, right_index)[2][:3]
-        left_norm, right_norm = np.linalg.norm(left_force), np.linalg.norm(right_force)
+        left_norm, right_norm = np.linalg.norm(left_force), np.linalg.norm(right_force)#取力的范数
         # print(left_norm, right_norm)
         if bool_operator == 'and':
-            return left_norm > force and right_norm > force
+            return left_norm > force and right_norm > force#左右夹爪的关节力大于100,返回true
+
         else:
             return left_norm > force or right_norm > force
-
     def move_gripper(self, gripper_opening_length: float, step: int = 120):
         gripper_opening_length = np.clip(gripper_opening_length, *self.gripper_open_limit)
         gripper_opening_angle = 0.715 - math.asin((gripper_opening_length - 0.010) / 0.1143)  # angle calculation
@@ -367,7 +371,7 @@ class ClutteredPushGrasp:
     def move_ee(self, action, max_step=500, check_collision_config=None, custom_velocity=None,
                 try_close_gripper=False, verbose=False):
         x, y, z, orn = action
-        x = np.clip(x, *self.ee_position_limit[0])
+        x = np.clip(x, *self.ee_position_limit[0])#clip函数用于限制范围
         y = np.clip(y, *self.ee_position_limit[1])
         z = np.clip(z, *self.ee_position_limit[2])
         # set damping for robot arm and gripper
@@ -389,7 +393,7 @@ class ClutteredPushGrasp:
 
             self.step_simulation()
             if try_close_gripper and still_open_flag_ and not self.gripper_contact():
-                still_open_flag_ = self.close_gripper(check_contact=True)
+                still_open_flag_ = self.close_gripper(check_contact=True)##??看不懂
             # Check if contact with objects
             if check_collision_config and self.gripper_contact(**check_collision_config):
                 print('Collision detected!', self.check_grasped_id())
@@ -402,7 +406,7 @@ class ClutteredPushGrasp:
                     and np.abs((roll - real_roll, pitch - real_pitch, yaw - real_yaw)).sum() < 0.001:
                 if verbose:
                     print('Reach target with', _, 'steps')
-                return True, (real_xyz, real_xyzw)
+                return True, (real_xyz, real_xyzw)#抓取位置和角度误差小于0.001，返回true
 
         # raise FailToReachTargetError
         print('Failed to reach the target')
