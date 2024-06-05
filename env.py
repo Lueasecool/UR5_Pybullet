@@ -1,11 +1,11 @@
 import time
 import math
 import random
-
+import os 
 import numpy as np
 import pybullet as p
 import pybullet_data
-
+import shutil
 from utilities import Models, setup_sisbot, setup_sisbot_force, Camera
 
 
@@ -31,11 +31,14 @@ class ClutteredPushGrasp:
 
     SIMULATION_STEP_DELAY = 1 / 240.
 
-    def __init__(self, models: Models, camera: Camera, vis=False, num_objs=3, gripper_type='85') -> None:
+    def __init__(self,client, models: Models, camera: Camera, vis=False, num_objs=3, gripper_type='85',idx=None,path=None) -> None:
+        self.p=client
         self.vis = vis
         self.num_objs = num_objs
         self.camera = camera
-
+        self.idx=idx
+        self.path=path
+        self.num_urdf=0
         if gripper_type not in ('85', '140'):
             raise NotImplementedError('Gripper %s not implemented.' % gripper_type)
         self.gripper_type = gripper_type
@@ -77,8 +80,8 @@ class ClutteredPushGrasp:
         self.successful_obj_ids = []
         self.obj_state = []
         self.models = models
-        self.models.load_objects()
-        self.load_objects(self.num_objs)
+        #self.models.load_objects()
+        self.load_objects_urdf(self.num_objs,idx,path)
         self.save_obj_state()
         self.reset_robot()  # Then, move back
 
@@ -116,8 +119,8 @@ class ClutteredPushGrasp:
                                            baseCollisionShapeIndex=col_shape,
                                            baseVisualShapeIndex=vis_shape,
                                            # Leave 0.05 space for safety
-                                           basePosition=(np.clip(np.random.normal(0, 0.005), -0.2, 0.2),
-                                                         np.clip(np.random.normal(0, 0.005) - 0.5, -0.7, -0.3),
+                                           basePosition=(np.clip(np.random.normal(0, 0.1), -0.2, 0.2),
+                                                         np.clip(np.random.normal(0, 0.1) - 0.5, -0.7, -0.3),
                                                          self.OBJECT_INIT_HEIGHT),
                                            # useMaximalCoordinates=True,
                                            baseOrientation=p.getQuaternionFromEuler((np.random.uniform(-np.pi, np.pi),
@@ -135,7 +138,86 @@ class ClutteredPushGrasp:
         for obj_handle in self.obj_ids:
             p.changeDynamics(obj_handle, -1, lateralFriction=1, rollingFriction=0.01, spinningFriction=0.001,
                              restitution=0)
+    def load_objects_urdf(self,num,idx,path):
+        """
+        以URDF的格式加载多个obj物体
 
+        num: 加载物体的个数
+        idx: 开始的id
+            idx为负数时，随机加载num个物体
+            idx为非负数时，从id开始加载num个物体
+        """
+        list_file = os.path.join(path, 'list.txt')
+        if not os.path.exists(list_file):
+            raise shutil.Error
+        self.urdfs_list = []
+        with open(list_file, 'r') as f:
+            while 1:
+                line = f.readline()
+                if not line:
+                    break
+                self.urdfs_list.append(os.path.join(path, line[:-1]+'.urdf') )
+
+        assert idx >= 0 and idx < len(self.urdfs_list)
+        self.num_urdf = num
+
+        # 获取物体文件
+        if (idx + self.num_urdf - 1) > (len(self.urdfs_list) - 1):     # 这段代码主要针对加载多物体的情况
+            self.urdfs_filename = self.urdfs_list[idx:]
+            self.urdfs_filename += self.urdfs_list[:2*self.num_urdf-len(self.urdfs_list)+idx]
+            self.objs_id = list(range(idx, len(self.urdfs_list)))
+            self.objs_id += list(range(self.num_urdf-len(self.urdfs_list)+idx))
+        else:
+            self.urdfs_filename = self.urdfs_list[idx:idx+self.num_urdf]
+            self.objs_id = list(range(idx, idx+self.num_urdf))
+        
+        # print('self.urdfs_filename = \n', self.urdfs_filename)
+        print('self.objs_id = \n', self.objs_id)
+
+        self.urdfs_id = []
+        self.urdfs_xyz = []
+        self.urdfs_scale = []
+        for i in range(self.num_urdf):
+            # 随机位置
+            pos = 0.2
+            #basePosition = [random.uniform(-1 * pos, pos), random.uniform(-1 * pos, pos), random.uniform(0.2, 0.3)] 
+            #basePosition = [0, 0, 0.1] # 固定位置
+            
+            basePosition = [random.uniform(-1 * pos, pos), random.uniform(-0.7, -0.3), random.uniform(1.05, 1.3)]                                
+            baseOrientation=p.getQuaternionFromEuler((np.random.uniform(-np.pi, np.pi),
+                                                                                     np.random.uniform(0, np.pi),
+                                                                                     np.random.uniform(-np.pi, np.pi)))
+                                           
+            # 随机方向
+            #baseEuler = [random.uniform(0, 2*math.pi), random.uniform(0, 2*math.pi), random.uniform(0, 2*math.pi)]
+            #baseOrientation = self.p.getQuaternionFromEuler(baseEuler)
+            # baseOrientation = [0, 0, 0, 1]    # 固定方向
+            
+            # 加载物体
+            urdf_id = self.p.loadURDF(self.urdfs_filename[i], basePosition, baseOrientation)    
+            # 使物体和机械手可以碰撞
+            # 机械手默认和所有物体不进行碰撞
+            if self.eefID is not None:
+                p.setCollisionFilterPair(urdf_id, self.eefID, -1, 0, 1)
+                p.setCollisionFilterPair(urdf_id, self.eefID, -1, 1, 1)
+                p.setCollisionFilterPair(urdf_id, self.eefID, -1, 2, 1)
+
+            # 获取xyz和scale信息
+            inf = p.getVisualShapeData(urdf_id)[0]
+
+            self.urdfs_id.append(urdf_id)
+            self.urdfs_xyz.append(inf[5]) 
+            self.urdfs_scale.append(inf[3][0]) 
+            
+            t = 0
+            while True:
+                p.stepSimulation()
+                t += 1
+                if t == 120:
+                    break
+
+
+    
     @staticmethod
     def is_still(handle):
         still_eps = 1e-3
@@ -157,14 +239,14 @@ class ClutteredPushGrasp:
             print('Warning: There is previous state available. Overwriting...')
             print(self.obj_state)
             self.obj_state = []
-        assert len(self.obj_ids) == self.num_objs
+        #assert len(self.obj_ids) == self.num_objs
         for obj_handle in self.obj_ids:
             pos, orn = p.getBasePositionAndOrientation(obj_handle)
             lin_vel, ang_vel = p.getBaseVelocity(obj_handle)
             self.obj_state.append((pos, orn, lin_vel, ang_vel))
 
     def reset_obj_state(self):
-        assert self.num_objs == len(self.obj_state)
+        #assert self.num_objs == len(self.obj_state)
         for obj_handle, (pos, orn, lin_vel, ang_vel) in zip(self.obj_ids, self.obj_state):
             p.resetBasePositionAndOrientation(obj_handle, pos, orn)
             p.resetBaseVelocity(obj_handle, lin_vel, ang_vel)

@@ -1,0 +1,31 @@
+<?xml version="0.0" ?> 
+<robot name="cube.urdf"> 
+<link name="legobrick"> 
+<contact> 
+<lateral_friction value="1.0"/>
+<rolling_friction value="0.0"/>
+<contact_cfm value="0.0"/>
+<contact_erp value="1.0"/>
+</contact> 
+<inertial> 
+<origin rpy="0 0 0" xyz="0.0 0.0 0.0"/> 
+<mass value="0.1"/> 
+<inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/> 
+</inertial> 
+<visual> 
+<origin rpy="1.570796 0 0" xyz="7.467176727167322e-20 -0.03535741176470576 1.7156862750544296e-08"/> 
+<geometry> 
+<mesh filename="908e85e13c6fbde0a1ca08763d503f0e_1.obj" scale="1 1 1"/> 
+</geometry> 
+<material name="yellow"> 
+<color rgba="0.6 0.6 0.6 1"/> 
+</material> 
+</visual> 
+<collision> 
+<origin rpy="1.570796 0 0" xyz="7.467176727167322e-20 -0.03535741176470576 1.7156862750544296e-08"/> 
+<geometry> 
+<mesh filename="908e85e13c6fbde0a1ca08763d503f0e_1_col.obj" scale="1 1 1"/> 
+</geometry> 
+</collision> 
+</link> 
+</robot>
